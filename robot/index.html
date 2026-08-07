@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mini Starship Control</title>
+<style>
+  :root{
+    --bg:#0b0f14;
+    --panel:#141a22;
+    --panel2:#1c2430;
+    --text:#eef4ff;
+    --muted:#8fa0b7;
+    --accent:#4ea1ff;
+    --good:#3ddc97;
+    --warn:#ffcc66;
+    --danger:#ff5d73;
+    --border:#2a3442;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:linear-gradient(180deg,#0a0e13,#0f151d);
+    color:var(--text);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:18px;
+  }
+  .app{width:min(560px,100%)}
+  .header{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:14px;
+  }
+  h1{font-size:24px;margin:0}
+  .status{
+    display:flex; gap:8px; align-items:center;
+    font-size:13px; color:var(--muted);
+  }
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--good);box-shadow:0 0 14px var(--good)}
+  .card{
+    background:rgba(20,26,34,.94);
+    border:1px solid var(--border);
+    border-radius:18px;
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+  }
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .stat{
+    flex:1; min-width:120px;
+    background:var(--panel2);
+    border-radius:14px;
+    padding:12px;
+  }
+  .stat b{font-size:20px;display:block;margin-top:3px}
+  .muted{color:var(--muted);font-size:13px}
+  .drive{
+    display:grid;
+    grid-template-columns:92px 92px 92px;
+    grid-template-rows:92px 92px 92px;
+    gap:10px;
+    justify-content:center;
+    margin-top:10px;
+  }
+  button{
+    border:none;
+    border-radius:18px;
+    font-size:27px;
+    font-weight:700;
+    color:white;
+    background:#263141;
+    box-shadow:inset 0 0 0 1px #344256;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  button:active,.pressed{transform:scale(.97);background:#334258}
+  .forward{grid-column:2;grid-row:1}
+  .left{grid-column:1;grid-row:2}
+  .stop{grid-column:2;grid-row:2;background:var(--danger);box-shadow:none;font-size:18px}
+  .right{grid-column:3;grid-row:2}
+  .back{grid-column:2;grid-row:3}
+  .speed-line{display:flex;align-items:center;gap:12px;margin-top:14px}
+  input[type=range]{width:100%}
+  .sensor-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+    margin-top:10px;
+  }
+  .sensor{
+    background:var(--panel2);border-radius:14px;padding:14px;text-align:center
+  }
+  .sensor b{font-size:20px}
+  .destinations{
+    display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px
+  }
+  .destinations button{font-size:15px;padding:15px;background:#243149}
+  .log{
+    background:#0d1218;
+    border-radius:14px;
+    padding:12px;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    min-height:105px;
+    color:#bcd0e7;
+    font-size:13px;
+    overflow:auto;
+  }
+  .mode{
+    display:flex; gap:8px;
+  }
+  .mode button{
+    flex:1;font-size:14px;padding:12px
+  }
+  .activeMode{background:var(--accent)!important}
+  @media(max-width:430px){
+    .drive{grid-template-columns:82px 82px 82px;grid-template-rows:82px 82px 82px}
+    h1{font-size:21px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div>
+      <h1>Mini Starship</h1>
+      <div class="muted">Demo robot control panel</div>
+    </div>
+    <div class="status"><span class="dot"></span> Connected</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="stat"><span class="muted">Battery</span><b id="battery">82%</b></div>
+      <div class="stat"><span class="muted">Speed</span><b id="speedText">40%</b></div>
+      <div class="stat"><span class="muted">State</span><b id="state">Stopped</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Control mode</div>
+    <div class="mode" style="margin-top:10px">
+      <button id="manualBtn" class="activeMode" onclick="setMode('Manual')">Manual</button>
+      <button id="autoBtn" onclick="setMode('Auto')">Auto</button>
+    </div>
+
+    <div class="drive">
+      <button class="forward" data-dir="Forward">▲</button>
+      <button class="left" data-dir="Left">◀</button>
+      <button class="stop" onclick="stopRobot()">STOP</button>
+      <button class="right" data-dir="Right">▶</button>
+      <button class="back" data-dir="Reverse">▼</button>
+    </div>
+
+    <div class="speed-line">
+      <span class="muted">Speed</span>
+      <input id="speed" type="range" min="10" max="100" value="40">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Obstacle sensors</div>
+    <div class="sensor-grid">
+      <div class="sensor"><span class="muted">Left</span><br><b id="leftSensor">78 cm</b></div>
+      <div class="sensor"><span class="muted">Front</span><br><b id="frontSensor">124 cm</b></div>
+      <div class="sensor"><span class="muted">Right</span><br><b id="rightSensor">66 cm</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Go to</div>
+    <div class="destinations">
+      <button onclick="goTo('Bedroom')">Bedroom</button>
+      <button onclick="goTo('Kitchen')">Kitchen</button>
+      <button onclick="goTo('Living Room')">Living Room</button>
+      <button onclick="goTo('Hall')">Hall</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted" style="margin-bottom:9px">Robot log</div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+const stateEl = document.getElementById('state');
+const speed = document.getElementById('speed');
+const speedText = document.getElementById('speedText');
+let mode = 'Manual';
+let moving = false;
+
+function log(msg){
+  const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logEl.innerHTML = `[${t}] ${msg}<br>` + logEl.innerHTML;
+}
+
+function setMode(m){
+  mode = m;
+  document.getElementById('manualBtn').classList.toggle('activeMode', m==='Manual');
+  document.getElementById('autoBtn').classList.toggle('activeMode', m==='Auto');
+  log(`Mode changed to ${m}`);
+}
+
+function startMove(dir){
+  if(mode !== 'Manual'){
+    log('Switch to Manual mode to drive directly.');
+    return;
+  }
+  moving = true;
+  stateEl.textContent = dir;
+  log(`${dir} at ${speed.value}% speed`);
+}
+
+function stopRobot(){
+  if(moving || stateEl.textContent !== 'Stopped'){
+    stateEl.textContent = 'Stopped';
+    moving = false;
+    log('Robot stopped');
+  }
+}
+
+document.querySelectorAll('[data-dir]').forEach(btn=>{
+  const dir = btn.dataset.dir;
+
+  btn.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    btn.setPointerCapture?.(e.pointerId);
+    btn.classList.add('pressed');
+    startMove(dir);
+  });
+
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>{
+    btn.addEventListener(ev, ()=>{
+      btn.classList.remove('pressed');
+      stopRobot();
+    });
+  });
+});
+
+speed.addEventListener('input', ()=>{
+  speedText.textContent = speed.value + '%';
+});
+
+function goTo(place){
+  setMode('Auto');
+  stateEl.textContent = 'Navigating';
+  log(`Destination set: ${place}`);
+  setTimeout(()=>log(`Demo path calculated to ${place}`),500);
+  setTimeout(()=>log(`Driving toward ${place}`),1000);
+}
+
+function randomSensor(id, min, max){
+  const n = Math.floor(Math.random()*(max-min+1))+min;
+  document.getElementById(id).textContent = n + ' cm';
+}
+
+setInterval(()=>{
+  randomSensor('leftSensor',35,120);
+  randomSensor('frontSensor',25,160);
+  randomSensor('rightSensor',35,120);
+},1800);
+
+log('Demo dashboard ready');
+</script>
+</body>
+</html>
