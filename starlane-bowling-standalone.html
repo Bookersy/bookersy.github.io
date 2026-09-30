@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body style="margin:0">
+<title>Starlane Bowling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Chivo:wght@400;600;700&family=Chivo+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: full-bleed 3D alley; a thin glass scorecard pinned top, controls pinned bottom. Single committed night look. */
+:root {
+  --night: #15111f;
+  --glass: rgba(21, 16, 34, 0.78);
+  --line: rgba(190, 170, 235, 0.22);
+  --ink: #f3ecff;
+  --dim: #a99cc4;
+  --amber: #ffb347;
+  --cyan: #6ee0ff;
+  --f-display: "Bungee", "Arial Black", Impact, sans-serif;
+  --f-body: "Chivo", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "Chivo Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--night); color: var(--ink); font-family: var(--f-body); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#hud { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 14px); gap: 12px; }
+.top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 18px; }
+.brand { font-family: var(--f-display); font-size: 22px; letter-spacing: 0.02em; color: var(--amber); text-shadow: 0 0 12px rgba(255, 179, 71, 0.55); line-height: 1; }
+.brand small { display: block; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; color: var(--cyan); text-shadow: none; margin-top: 6px; text-transform: uppercase; }
+.cardwrap { pointer-events: auto; max-width: 100%; overflow-x: auto; background: var(--glass); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(6px); }
+.card { display: grid; grid-template-columns: repeat(9, minmax(32px, 44px)) minmax(48px, 62px); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.fr { border-right: 1px solid var(--line); display: grid; grid-template-rows: 14px 20px 22px; text-align: center; }
+.fr:last-child { border-right: 0; }
+.fr .n { font-size: 9px; color: var(--dim); line-height: 14px; letter-spacing: 0.08em; }
+.fr .m { display: flex; justify-content: flex-end; font-size: 12px; font-weight: 700; }
+.fr .m span { width: 15px; height: 20px; line-height: 20px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.fr .m span.x { color: var(--amber); }
+.fr .m span.s { color: var(--cyan); }
+.fr .t { font-size: 13px; line-height: 22px; }
+.fr.cur { background: rgba(255, 179, 71, 0.12); box-shadow: inset 0 -2px 0 var(--amber); }
+.total { font-family: var(--f-mono); font-size: 12px; color: var(--dim); align-self: center; letter-spacing: 0.06em; }
+.total b { color: var(--ink); font-size: 18px; margin-left: 6px; }
+#toast { align-self: center; text-align: center; transition: opacity .35s, transform .35s; opacity: 0; transform: translateY(8px) scale(.96); }
+#toast.on { opacity: 1; transform: none; }
+#toast b { display: block; font-family: var(--f-display); font-size: clamp(34px, 9vw, 72px); color: var(--cyan); text-shadow: 0 0 18px rgba(110, 224, 255, .6), 0 2px 0 #0b0814; line-height: 1; text-wrap: balance; }
+#toast span { display: block; margin-top: 8px; font-family: var(--f-mono); font-size: 14px; color: var(--ink); letter-spacing: .08em; text-transform: uppercase; }
+.bottom { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
+#hint { max-width: 46ch; font-size: 13.5px; line-height: 1.45; color: var(--dim); background: var(--glass); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+#hint.gone { opacity: 0; transition: opacity .6s; }
+#hint strong { color: var(--ink); font-weight: 600; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; pointer-events: auto; }
+button { font: 600 14px/1 var(--f-body); color: var(--ink); background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 12px 18px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+button.primary { background: var(--amber); color: #1c1206; border-color: var(--amber); font-weight: 700; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+#vrNote:empty { display: none; }
+#vrNote { flex-basis: 100%; font-size: 13px; color: var(--ink); background: var(--glass); border-radius: 6px; padding: 4px 8px; width: fit-content; margin-left: auto; text-align: right; min-height: 1em; }
+@media (max-width: 560px) { #vrNote { text-align: left; } #hint { font-size: 12.5px; } }
+@media (max-height: 520px) { #vrNote { display: none; } }
+@media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+
+<div id="stage"></div>
+<div id="hud">
+  <div class="top">
+    <div class="brand">Starlane<small>Lane 7 · 10 frames</small></div>
+    <div class="cardwrap"><div class="card" id="card" aria-label="Scorecard"></div></div>
+    <div class="total">Score<b id="totalNum">0</b></div>
+  </div>
+  <div id="toast" aria-live="polite"><b></b><span></span></div>
+  <div class="bottom">
+    <p id="hint"><strong>Swipe up</strong> to bowl: a faster flick rolls a faster ball. <strong>Curve the swipe</strong> to put hook on it. Press where you want to stand on the approach, or nudge with ← →. Space rolls a straight ball.</p>
+    <div class="btns">
+      <button id="newBtn" type="button">New game</button>
+      <button id="vrBtn" type="button" class="primary" disabled>Checking VR…</button>
+    </div>
+    <p id="vrNote"></p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+// ---------- Real lane dimensions (metres) ----------
+const LANE_W = 1.054, LANE_HALF = LANE_W / 2, GUTTER_R = 0.117, GUTTER_C = LANE_HALF + GUTTER_R, WALL_X = LANE_HALF + 2 * GUTTER_R;
+const HEAD_Z = -18.29, ROW_DZ = 0.264, PIN_SP = 0.3048, DECK_END = -19.16, PIT_BACK = -20.0, OIL_END = -12.19;
+const BALL_R = 0.109, BALL_M = 6.8, PIN_M = 1.53, PIN_R = 0.06, PIN_H = 0.381, HALF_PI = Math.PI / 2;
+const LANE_PITCH = 1.82, RIG_Z = 1.4;
+const RETURN_POS = new THREE.Vector3(0.95, 0.73 + BALL_R, 1.55);
+
+const $ = s => document.querySelector(s);
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- Renderer / scene ----------
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+stage.appendChild(renderer.domElement);
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0a16);
+scene.fog = new THREE.Fog(0x0d0a16, 18, 34);
+const rig = new THREE.Group(); scene.add(rig);
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.03, 80);
+camera.position.set(0, 1.45, 2.7);
+rig.add(camera);
+
+scene.add(new THREE.HemisphereLight(0xa99cff, 0x2a1d33, 0.65));
+const key = new THREE.DirectionalLight(0xffe2b8, 0.55); key.position.set(1, 4, 3); scene.add(key);
+[-LANE_PITCH, 0, LANE_PITCH].forEach(x => { const l = new THREE.PointLight(0xfff1dc, x === 0 ? 1.6 : 0.9, 4.5, 1.6); l.position.set(x, 0.95, -18.0); scene.add(l); });
+const laneGlow = new THREE.PointLight(0x9fd8ff, 0.5, 12, 1.5); laneGlow.position.set(0, 2.6, -8); scene.add(laneGlow);
+
+// ---------- Canvas textures ----------
+function woodCanvas(wPx, hPx, boards, light) {
+  const c = document.createElement('canvas'); c.width = wPx; c.height = hPx;
+  const g = c.getContext('2d'); const bw = wPx / boards;
+  for (let i = 0; i < boards; i++) {
+    const l = light + rand(-5, 5), h = 32 + rand(-4, 4);
+    g.fillStyle = `hsl(${h} 52% ${l}%)`; g.fillRect(i * bw, 0, bw + 1, hPx);
+    for (let k = 0; k < 5; k++) { g.fillStyle = `hsla(${h - 6} 50% ${l - 14}% / .16)`; g.fillRect(i * bw + rand(1, bw - 2), 0, rand(.6, 1.4), hPx); }
+    g.fillStyle = 'rgba(70,40,15,.35)'; g.fillRect(i * bw, 0, 1, hPx);
+  }
+  return { c, g, bw };
+}
+function tex(c, repeatX, repeatY) {
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso;
+  if (repeatX) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeatX, repeatY); }
+  return t;
+}
+const LANE_LEN = -DECK_END;
+function laneTexture() {
+  const W = 256, H = 4096, ppm = H / LANE_LEN;
+  const { c, g, bw } = woodCanvas(W, H, 39, 70);
+  const yAt = d => H * (1 - d / LANE_LEN);           // d = metres from foul line
+  // pin deck: slightly paler synthetic surface
+  g.fillStyle = 'rgba(255,245,225,.18)'; g.fillRect(0, 0, W, yAt(-HEAD_Z - 0.12));
+  // foul line
+  g.fillStyle = '#16111c'; g.fillRect(0, H - 0.02 * ppm, W, 0.02 * ppm);
+  const boardX = b => (39 - b + 0.5) * bw;          // board 1 = right edge (right-hander numbering)
+  // guide dots at 7 ft
+  g.fillStyle = '#1b1320';
+  [3, 5, 8, 11, 14, 26, 29, 32, 35, 37].forEach(b => { g.beginPath(); g.arc(boardX(b), yAt(2.13), 3.5, 0, 7); g.fill(); });
+  // targeting arrows (V pointing at the pins, centre arrow furthest)
+  [5, 10, 15, 20, 25, 30, 35].forEach(b => {
+    const d = 4.88 - Math.abs(b - 20) / 5 * 0.305, y = yAt(d), x = boardX(b);
+    g.fillStyle = '#1e1426'; g.beginPath(); g.moveTo(x, y - 0.16 * ppm); g.lineTo(x - bw * .75, y); g.lineTo(x + bw * .75, y); g.closePath(); g.fill();
+  });
+  // range finders 34–40 ft
+  [10, 30].forEach(b => { g.fillStyle = 'rgba(30,20,38,.8)'; g.fillRect(boardX(b) - 2, yAt(12.2), 4, 1.8 * ppm); });
+  // pin spot marks
+  g.strokeStyle = 'rgba(40,25,40,.5)'; g.lineWidth = 2;
+  SPOTS().forEach(s => { g.beginPath(); g.arc(W / 2 + s.x / LANE_W * W, yAt(-s.z), PIN_R * .45 * ppm, 0, 7); g.stroke(); });
+  return tex(c);
+}
+function SPOTS() { const o = []; for (let r = 0; r < 4; r++) for (let k = 0; k <= r; k++) o.push({ x: (k - r / 2) * PIN_SP, z: HEAD_Z - r * ROW_DZ }); return o; }
+const spots = SPOTS();
+
+function approachTexture() {
+  const W = 256, H = 1120, ppm = H / 4.6;
+  const { c, g, bw } = woodCanvas(W, H, 39, 76);
+  g.fillStyle = '#16111c'; g.fillRect(0, 0, W, 0.02 * ppm);
+  g.fillStyle = '#2a1c2e';
+  [3.66, 4.57].forEach(d => [3, 5, 8, 11, 15, 20, 25, 29, 32, 35, 37].forEach(b => { g.beginPath(); g.arc((39 - b + .5) * bw, d * ppm, 4, 0, 7); g.fill(); }));
+  return tex(c);
+}
+function ballTexture() {
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#0c3444'; g.fillRect(0, 0, W, H);
+  const cols = ['#1b7189', '#2fa6c4', '#0a2230', '#6ee0ff', '#123f55'];
+  for (let i = 0; i < 90; i++) {
+    g.strokeStyle = cols[i % cols.length]; g.globalAlpha = rand(.15, .5); g.lineWidth = rand(3, 22);
+    g.beginPath(); const y = rand(0, H); g.moveTo(-50, y);
+    g.bezierCurveTo(rand(0, W), rand(0, H), rand(0, W), rand(0, H), W + 50, rand(0, H)); g.stroke();
+  }
+  g.globalAlpha = 1;
+  const hole = (x, y, r) => { g.fillStyle = '#050307'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.strokeStyle = 'rgba(200,240,255,.35)'; g.lineWidth = 2; g.stroke(); };
+  hole(W * .25 - 22, H * .42, 13); hole(W * .25 + 22, H * .42, 13); hole(W * .25, H * .62, 16);
+  const t = tex(c); return t;
+}
+function pinTexture() {
+  const c = document.createElement('canvas'); c.width = 8; c.height = 512; const g = c.getContext('2d');
+  g.fillStyle = '#f7f3ec'; g.fillRect(0, 0, 8, 512);
+  const band = (a, b) => { g.fillStyle = '#c8102e'; g.fillRect(0, 512 * (1 - b / 15), 8, 512 * (b - a) / 15); };
+  band(9.15, 9.6); band(10.15, 10.6);
+  return tex(c);
+}
+
+// ---------- Geometry ----------
+const woodMat = new THREE.MeshStandardMaterial({ map: laneTexture(), roughness: 0.28, metalness: 0.0 });
+const approachMat = new THREE.MeshStandardMaterial({ map: approachTexture(), roughness: 0.45 });
+const floorWood = woodCanvas(256, 256, 20, 38).c;
+const floorMat = new THREE.MeshStandardMaterial({ map: tex(floorWood, 6, 2), roughness: 0.7 });
+const darkMat = new THREE.MeshStandardMaterial({ color: 0x1d1629, roughness: 0.6 });
+const gutterMat = new THREE.MeshStandardMaterial({ color: 0x2c2438, roughness: 0.35, metalness: 0.3, side: THREE.DoubleSide });
+const blackMat = new THREE.MeshBasicMaterial({ color: 0x07050b });
+const neonAmber = new THREE.MeshBasicMaterial({ color: 0xffb347 });
+const neonCyan = new THREE.MeshBasicMaterial({ color: 0x6ee0ff });
+
+// pin lathe (regulation profile, inches → metres)
+const PROFILE = [[0, 1.0], [0.75, 1.6], [2, 2.12], [4.5, 2.383], [6.5, 2.2], [8.5, 1.5], [10, 0.9], [11, 0.95], [12.5, 1.25], [13.5, 1.27], [14.3, 1.02], [14.8, 0.55], [15, 0.02]];
+function pinRadius(hIn) { for (let i = 1; i < PROFILE.length; i++) { const [h1, r1] = PROFILE[i], [h0, r0] = PROFILE[i - 1]; if (hIn <= h1) { const t = (hIn - h0) / (h1 - h0); const s = t * t * (3 - 2 * t); return r0 + (r1 - r0) * (0.5 * t + 0.5 * s); } } return 0.02; }
+const pinPts = [new THREE.Vector2(0.0005, 0)];
+for (let i = 0; i <= 40; i++) { const h = i / 40 * 15; pinPts.push(new THREE.Vector2(pinRadius(h) * 0.0254, h * 0.0254)); }
+const pinGeo = new THREE.LatheGeometry(pinPts, 20);
+{ const pos = pinGeo.attributes.position, uv = pinGeo.attributes.uv; for (let i = 0; i < pos.count; i++) uv.setY(i, pos.getY(i) / PIN_H); uv.needsUpdate = true; }
+const pinMat = new THREE.MeshStandardMaterial({ map: pinTexture(), roughness: 0.22, metalness: 0.02 });
+
+function buildLane(xOff, withStaticPins) {
+  const g = new THREE.Group(); g.position.x = xOff;
+  const lane = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W, LANE_LEN), woodMat);
+  lane.rotation.x = -HALF_PI; lane.position.z = DECK_END / 2; g.add(lane);
+  const ap = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W, 4.6), approachMat);
+  ap.rotation.x = -HALF_PI; ap.position.set(0, 0.001, 2.3); g.add(ap);
+  [-1, 1].forEach(s => {
+    const gut = new THREE.Mesh(new THREE.CylinderGeometry(GUTTER_R, GUTTER_R, LANE_LEN, 14, 1, true, -HALF_PI, Math.PI), gutterMat);
+    gut.rotation.x = HALF_PI; gut.position.set(s * GUTTER_C, 0, DECK_END / 2); g.add(gut);
+    const kick = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 2.9), darkMat); kick.position.set(s * (WALL_X + 0.015), 0.35, -18.6); g.add(kick);
+  });
+  const pit = new THREE.Mesh(new THREE.BoxGeometry(WALL_X * 2, 0.02, 1.0), blackMat); pit.position.set(0, -0.75, (DECK_END + PIT_BACK) / 2); g.add(pit);
+  const cushion = new THREE.Mesh(new THREE.PlaneGeometry(WALL_X * 2, 1.9), blackMat); cushion.position.set(0, 0.2, PIT_BACK - 0.05); g.add(cushion);
+  if (withStaticPins) spots.forEach(s => { const m = new THREE.Mesh(pinGeo, pinMat); m.position.set(s.x, 0, s.z); g.add(m); });
+  scene.add(g); return g;
+}
+buildLane(0, false); buildLane(-LANE_PITCH, true); buildLane(LANE_PITCH, true);
+[-LANE_PITCH * 1.5, -LANE_PITCH / 2, LANE_PITCH / 2, LANE_PITCH * 1.5].forEach(x => {
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(LANE_PITCH - 2 * WALL_X, 0.05, LANE_LEN), darkMat); cap.position.set(x, 0.0, DECK_END / 2); scene.add(cap);
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, LANE_LEN), Math.abs(x) < 1 ? neonCyan : neonAmber); strip.position.set(x, 0.032, DECK_END / 2); scene.add(strip);
+});
+{ // floors, walls, ceiling
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(8, 22), darkMat); under.rotation.x = -HALF_PI; under.position.set(0, -0.16, -9); scene.add(under);
+  const ap = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 4.6), floorMat); ap.rotation.x = -HALF_PI; ap.position.set(0, -0.002, 2.3); scene.add(ap);
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 4), new THREE.MeshStandardMaterial({ color: 0x241a3a, roughness: 1 })); carpet.rotation.x = -HALF_PI; carpet.position.set(0, -0.003, 6.6); scene.add(carpet);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x17112a, roughness: 0.9, side: THREE.DoubleSide });
+  [-1, 1].forEach(s => {
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(30, 3.6), wallMat); w.rotation.y = HALF_PI; w.position.set(s * 3.7, 1.6, -7); scene.add(w);
+    const n1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 29), s < 0 ? neonCyan : neonAmber); n1.position.set(s * 3.68, 1.2, -7); scene.add(n1);
+    const n2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 29), s < 0 ? neonAmber : neonCyan); n2.position.set(s * 3.68, 1.28, -7); scene.add(n2);
+  });
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 30), wallMat); ceil.rotation.x = HALF_PI; ceil.position.set(0, 3.4, -7); scene.add(ceil);
+  [-LANE_PITCH, 0, LANE_PITCH].forEach(x => { for (let z = -2; z > -17; z -= 3.2) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 1.4), new THREE.MeshBasicMaterial({ color: 0x3a2f5c })); l.position.set(x, 3.38, z); scene.add(l); } });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 3.6), wallMat); back.position.set(0, 1.6, 8.6); back.rotation.y = Math.PI; scene.add(back);
+  const deep = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 3.6), blackMat); deep.position.set(0, 1.6, -21.2); scene.add(deep);
+  // ball return hood
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.7, 0.9), new THREE.MeshStandardMaterial({ color: 0x2a2045, roughness: 0.35, metalness: 0.4 }));
+  hood.position.set(RETURN_POS.x, 0.35, RETURN_POS.z); scene.add(hood);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 28), neonAmber); ring.rotation.x = HALF_PI; ring.position.set(RETURN_POS.x, 0.71, RETURN_POS.z); scene.add(ring);
+}
+
+// masking unit above the pin decks
+const maskCanvas = document.createElement('canvas'); maskCanvas.width = 1536; maskCanvas.height = 512;
+const maskTex = tex(maskCanvas);
+const stars = Array.from({ length: 220 }, () => [Math.random(), Math.random(), Math.random()]);
+function drawMask() {
+  const g = maskCanvas.getContext('2d'), W = 1536, H = 512;
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#0b0818'); gr.addColorStop(1, '#2b1a4d'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  stars.forEach(([x, y, s]) => { g.fillStyle = `rgba(255,255,255,${.25 + s * .6})`; g.fillRect(x * W, y * H * .8, 1 + s * 2, 1 + s * 2); });
+  g.textAlign = 'center'; g.font = '120px Bungee, Impact, sans-serif';
+  g.shadowColor = '#ffb347'; g.shadowBlur = 30; g.fillStyle = '#ffd08a'; g.fillText('STARLANE', W / 2, 250);
+  g.shadowBlur = 0; g.font = '64px Bungee, Impact, sans-serif';
+  [[-LANE_PITCH, '6'], [0, '7'], [LANE_PITCH, '8']].forEach(([x, n]) => { const cx = (x + 3.7) / 7.4 * W; g.fillStyle = x === 0 ? '#6ee0ff' : '#8a7bb0'; g.fillText(n, cx, 440); });
+  g.fillStyle = '#6ee0ff'; g.fillRect(0, H - 8, W, 8);
+  maskTex.needsUpdate = true;
+}
+drawMask();
+const mask = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 2.47), new THREE.MeshBasicMaterial({ map: maskTex }));
+mask.position.set(0, 1.05 + 2.47 / 2, -17.4); scene.add(mask);
+
+// ---------- Overhead scoring monitor ----------
+const sbCanvas = document.createElement('canvas'); sbCanvas.width = 1024; sbCanvas.height = 360;
+const sbTex = tex(sbCanvas);
+const monitor = new THREE.Group(); monitor.position.set(0, 2.6, -2.4); monitor.rotation.x = 0.12; scene.add(monitor);
+monitor.add(new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.9, 0.06), new THREE.MeshStandardMaterial({ color: 0x0c0914, roughness: .5 })));
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2 * 360 / 1024), new THREE.MeshBasicMaterial({ map: sbTex })); screen.position.z = 0.032; monitor.add(screen);
+
+// ---------- Ball ----------
+const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 40, 24), new THREE.MeshStandardMaterial({ map: ballTexture(), roughness: 0.12, metalness: 0.15 }));
+scene.add(ballMesh);
+const ball = { p: new THREE.Vector3(), v: new THREE.Vector3(), spin: 0, gutter: 0, wasGutter: false, crossed: false, hitPins: false };
+
+// ---------- Pins ----------
+const pins = spots.map((s, i) => { const m = new THREE.Mesh(pinGeo, pinMat); scene.add(m); return { i, s, mesh: m }; });
+function resetPin(p, lower) {
+  Object.assign(p, { x: p.s.x, z: p.s.z, y: 0, vx: 0, vz: 0, vy: 0, standing: true, active: true, removed: false, sinking: false, tilt: 0, tiltVel: 0, dirA: 0, yawW: 0, wobA: 0, wobP: 0, wobDir: 0, lower: lower || 0 });
+  p.mesh.visible = true;
+}
+function topple(p, vx, vz, s) {
+  if (!p.standing) return;
+  p.standing = false; p.dirA = Math.atan2(vz, vx) + rand(-0.45, 0.45);
+  p.tiltVel = 1.5 + Math.min(s, 10) * 0.5; p.yawW = rand(-0.7, 0.7) * Math.min(s, 10);
+  if (s > 3) p.vy = Math.min(2.4, s * 0.16);
+}
+function pinCenter(p) {
+  if (p.standing) return [p.x, p.z, PIN_R];
+  const d = Math.sin(p.tilt) * 0.17; return [p.x + Math.cos(p.dirA) * d, p.z + Math.sin(p.dirA) * d, 0.058];
+}
+function pinFloor(p) { if (p.z < DECK_END) return -0.8; if (Math.abs(p.x) > LANE_HALF + 0.03) return -0.1; return 0; }
+function stepPin(p, h) {
+  if (p.sinking) { p.y -= 1.4 * h; if (p.y < -0.6) { p.active = false; p.sinking = false; p.mesh.visible = false; } return; }
+  if (!p.active) return;
+  if (p.lower > 0) { p.lower = Math.max(0, p.lower - h * 0.9); return; }
+  const floor = pinFloor(p), air = p.y > floor + 0.005;
+  const s = Math.hypot(p.vx, p.vz);
+  if (s > 0 && !air) { const ns = Math.max(0, s - (p.standing ? 4.5 : 2.0) * h); p.vx *= ns / s; p.vz *= ns / s; }
+  if (p.standing && s > 1.4) topple(p, p.vx, p.vz, s);
+  p.x += p.vx * h; p.z += p.vz * h;
+  if (air || p.vy > 0) { p.vy -= 9.81 * h; p.y += p.vy * h; if (p.y < floor) { p.y = floor; if (p.vy < -1) { p.vy = -p.vy * 0.3; clack(0.6); } else p.vy = 0; } }
+  if (!p.standing && (p.tilt < HALF_PI || p.tiltVel !== 0)) {
+    p.tiltVel += 24 * Math.sin(p.tilt + 0.12) * h; p.tilt += p.tiltVel * h;
+    if (p.tilt >= HALF_PI) { p.tilt = HALF_PI; if (p.tiltVel > 2) { clack(p.tiltVel * 0.3); p.tiltVel = -p.tiltVel * 0.25; } else p.tiltVel = 0; }
+  }
+  if (!p.standing) { p.dirA += p.yawW * h; p.yawW *= Math.max(0, 1 - 1.6 * h); }
+  if (p.wobA > 0.0005) { p.wobP += 16 * h; p.wobA *= Math.max(0, 1 - 2.5 * h); } else p.wobA = 0;
+  const inPit = p.z < DECK_END, inGut = !inPit && Math.abs(p.x) > LANE_HALF + 0.03;
+  if (p.standing && (inPit || inGut)) topple(p, inGut ? Math.sign(p.x) : p.vx, inGut ? 0 : Math.min(p.vz, -0.1), 1);
+  if (Math.abs(p.x) > WALL_X - 0.04) { p.x = Math.sign(p.x) * (WALL_X - 0.04); if (Math.abs(p.vx) > 1) clack(Math.abs(p.vx) * 0.35); p.vx = -p.vx * 0.5; }
+  if (p.z < PIT_BACK + 0.05) { p.z = PIT_BACK + 0.05; p.vz = Math.abs(p.vz) * 0.2; }
+  if (p.y < -0.5) { p.active = false; p.removed = true; p.mesh.visible = false; }
+}
+function hitPin(p, nx, nz, dv) {
+  if (!p.standing) return;
+  if (dv > 0.38) topple(p, p.vx, p.vz, dv);
+  else { p.wobA = Math.min(0.14, p.wobA + dv * 0.35); p.wobDir = Math.atan2(nz, nx); }
+}
+const tmpAxis = new THREE.Vector3();
+function renderPin(p) {
+  if (!p.mesh.visible) return;
+  let tilt, a; if (p.standing) { tilt = p.wobA * Math.sin(p.wobP); a = p.wobDir; } else { tilt = p.tilt; a = p.dirA; }
+  const dx = Math.cos(a), dz = Math.sin(a);
+  tmpAxis.set(dz, 0, -dx); p.mesh.quaternion.setFromAxisAngle(tmpAxis, tilt);
+  p.mesh.position.set(p.x, p.y + p.lower + (p.standing ? 0 : 0.055 * Math.sin(tilt)), p.z);
+}
+
+// ---------- Physics ----------
+const qTmp = new THREE.Quaternion(), vTmp = new THREE.Vector3();
+function stepBall(h) {
+  const b = ball, inPit = b.p.z < DECK_END;
+  if (!b.gutter && !inPit && b.p.z < 0 && Math.abs(b.p.x) > LANE_HALF && b.p.y <= BALL_R + 0.03) { b.gutter = Math.sign(b.p.x); b.wasGutter = true; }
+  const floor = inPit ? -0.35 : b.gutter ? GUTTER_R * -1 + BALL_R : BALL_R;
+  if (b.gutter && !inPit) { b.p.x += (b.gutter * GUTTER_C - b.p.x) * Math.min(1, h * 12); b.v.x = 0; }
+  if (b.p.y > floor + 1e-4 || b.v.y > 0) {
+    b.v.y -= 9.81 * h; b.p.y += b.v.y * h;
+    if (b.p.y <= floor) { b.p.y = floor; if (b.v.y < -0.9) { thud(-b.v.y); b.v.y = -b.v.y * 0.22; } else b.v.y = 0; }
+  } else { b.p.y = floor; b.v.y = 0; }
+  const ground = b.p.y <= floor + 0.003;
+  const s = Math.hypot(b.v.x, b.v.z);
+  if (ground) {
+    if (s > 0) { const ns = Math.max(0, s - (b.p.z > 0 ? 0.8 : 0.09) * h); b.v.x *= ns / s; b.v.z *= ns / s; }
+    if (!b.gutter && b.p.z < 0 && !inPit) b.v.x += -b.spin * 1.3 * (b.p.z < OIL_END ? 1 : 0.12) * h;
+    if (s > 0.01) { vTmp.set(b.v.z, 0, -b.v.x).normalize(); qTmp.setFromAxisAngle(vTmp, s / BALL_R * h); ballMesh.quaternion.premultiply(qTmp); }
+  }
+  b.p.x += b.v.x * h; b.p.z += b.v.z * h;
+  const lim = b.p.z > 0.05 ? 1.3 : WALL_X - BALL_R;
+  if (Math.abs(b.p.x) > lim) { b.p.x = Math.sign(b.p.x) * lim; b.v.x *= -0.3; }
+  if (b.p.z < PIT_BACK + BALL_R) { b.p.z = PIT_BACK + BALL_R; b.v.z = Math.abs(b.v.z) * 0.1; b.v.x *= 0.5; }
+  b.ground = ground;
+}
+function collide() {
+  const b = ball;
+  if (ballLive() && !b.gutter && b.p.y > -0.05 && b.p.y < 0.5) {
+    for (const p of pins) {
+      if (!p.active || p.sinking || p.y < -0.15) continue;
+      const [cx, cz, pr] = pinCenter(p); const dx = cx - b.p.x, dz = cz - b.p.z, d = Math.hypot(dx, dz), R = BALL_R + pr;
+      if (d < R && d > 1e-6) {
+        const nx = dx / d, nz = dz / d, ov = R - d;
+        p.x += nx * ov * 0.85; p.z += nz * ov * 0.85; b.p.x -= nx * ov * 0.15; b.p.z -= nz * ov * 0.15;
+        const vrel = (b.v.x - p.vx) * nx + (b.v.z - p.vz) * nz;
+        if (vrel > 0) {
+          const j = 1.72 * vrel / (1 / BALL_M + 1 / PIN_M), dv = j / PIN_M;
+          b.v.x -= j / BALL_M * nx; b.v.z -= j / BALL_M * nz; p.vx += dv * nx + rand(-.04, .04) * dv; p.vz += dv * nz;
+          hitPin(p, nx, nz, dv); clack(dv);
+          if (!b.hitPins) { b.hitPins = true; buzz(0.7, 60); }
+        }
+      }
+    }
+  }
+  for (let i = 0; i < pins.length; i++) {
+    const a = pins[i]; if (!a.active || a.sinking || a.lower > 0) continue;
+    const [ax, az, ar] = pinCenter(a);
+    for (let k = i + 1; k < pins.length; k++) {
+      const c = pins[k]; if (!c.active || c.sinking || c.lower > 0) continue;
+      if (Math.abs(a.y - c.y) > 0.3) continue;
+      const [bx, bz, br] = pinCenter(c); const dx = bx - ax, dz = bz - az, d = Math.hypot(dx, dz), R = ar + br;
+      if (d < R && d > 1e-6) {
+        const nx = dx / d, nz = dz / d, ov = (R - d) / 2;
+        a.x -= nx * ov; a.z -= nz * ov; c.x += nx * ov; c.z += nz * ov;
+        const vrel = (a.vx - c.vx) * nx + (a.vz - c.vz) * nz;
+        if (vrel > 0) {
+          const j = 1.55 * vrel / 2;
+          a.vx -= j * nx; a.vz -= j * nz; c.vx += j * nx; c.vz += j * nz;
+          hitPin(a, -nx, -nz, j); hitPin(c, nx, nz, j); if (j > 0.3) clack(j * 0.8);
+          if (!a.standing && j > 0.6) a.yawW += rand(-2, 2); if (!c.standing && j > 0.6) c.yawW += rand(-2, 2);
+        }
+      }
+    }
+  }
+}
+function pinsSettled() {
+  return pins.every(p => !p.active || p.sinking || (Math.hypot(p.vx, p.vz) < 0.04 && p.vy === 0 && (p.standing ? p.wobA < 0.012 : p.tiltVel === 0)));
+}
+
+// ---------- Game state & scoring ----------
+let frames, strikeFlags, phase = 'ready', phaseT = 0, standingAtThrow = 0, pendingReset = false, aimX = 0;
+const ballLive = () => phase === 'rolling' || phase === 'settling';
+function frameDone(i) {
+  const f = frames[i];
+  if (i < 9) return f[0] === 10 || f.length === 2;
+  return f.length === 3 || (f.length === 2 && f[0] + f[1] < 10);
+}
+function curFrame() { for (let i = 0; i < 10; i++) if (!frameDone(i)) return i; return 10; }
+function freshRackFor(fi) { // is the next ball in frame fi rolled at a full rack?
+  const f = frames[fi]; if (f.length === 0) return true;
+  if (fi < 9) return false;
+  if (f.length === 1) return f[0] === 10;
+  if (f.length === 2) return (f[0] === 10 && f[1] === 10) || (f[0] < 10 && f[0] + f[1] === 10);
+  return false;
+}
+function frameScores() {
+  const r = frames.flat(); const out = []; let idx = 0, total = 0, known = true;
+  for (let i = 0; i < 10; i++) {
+    const f = frames[i]; let sc = null;
+    if (i < 9) {
+      if (f[0] === 10) { if (r[idx + 1] !== undefined && r[idx + 2] !== undefined) sc = 10 + r[idx + 1] + r[idx + 2]; idx += 1; }
+      else if (f.length === 2) { const sum = f[0] + f[1]; if (sum === 10) { if (r[idx + 2] !== undefined) sc = 10 + r[idx + 2]; } else sc = sum; idx += 2; }
+      else idx += f.length;
+    } else if (frameDone(9)) sc = f.reduce((a, b) => a + b, 0);
+    if (sc === null || !known) { known = false; out.push(null); } else { total += sc; out.push(total); }
+  }
+  return out;
+}
+function runningTotal() { const s = frameScores(); let t = 0; s.forEach(v => { if (v !== null) t = v; }); return t; }
+function frameMarks(i) {
+  const f = frames[i], d = n => n === 0 ? '-' : String(n);
+  if (i < 9) { if (f[0] === 10) return ['', 'X']; return [f[0] === undefined ? '' : d(f[0]), f[1] === undefined ? '' : (f[0] + f[1] === 10 ? '/' : d(f[1]))]; }
+  const m = ['', '', ''];
+  if (f[0] !== undefined) m[0] = f[0] === 10 ? 'X' : d(f[0]);
+  if (f[1] !== undefined) m[1] = f[0] === 10 ? (f[1] === 10 ? 'X' : d(f[1])) : (f[0] + f[1] === 10 ? '/' : d(f[1]));
+  if (f[2] !== undefined) {
+    if ((f[0] === 10 && f[1] === 10) || (f[0] < 10 && f[0] + f[1] === 10)) m[2] = f[2] === 10 ? 'X' : d(f[2]);
+    else m[2] = f[1] + f[2] === 10 ? '/' : d(f[2]);
+  }
+  return m;
+}
+function isSplit() {
+  if (pins[0].standing && pins[0].active) return false;
+  const up = pins.filter(p => p.standing && p.active).map(p => p.i); if (up.length < 2) return false;
+  const adj = (a, b) => { const A = spots[a], B = spots[b], d = Math.hypot(A.x - B.x, A.z - B.z); return d < 0.32 || (Math.abs(A.x - B.x) < 0.01 && d < 0.55); };
+  const seen = new Set([up[0]]), stack = [up[0]];
+  while (stack.length) { const c = stack.pop(); up.forEach(o => { if (!seen.has(o) && adj(c, o)) { seen.add(o); stack.push(o); } }); }
+  return seen.size < up.length;
+}
+
+function newGame() {
+  frames = Array.from({ length: 10 }, () => []); strikeFlags = [];
+  pins.forEach(p => resetPin(p, 0.45));
+  phase = 'sweep'; phaseT = 0.9; pendingReset = false;
+  message('New game', 'Frame 1 · lane 7');
+  refreshScore();
+}
+function placeBallReady() {
+  ball.v.set(0, 0, 0); ball.spin = 0; ball.gutter = 0; ball.wasGutter = false; ball.crossed = false; ball.hitPins = false;
+  if (renderer.xr.isPresenting) ball.p.copy(RETURN_POS); else ball.p.set(aimX, BALL_R, 0.55);
+  ballMesh.visible = true;
+}
+function launch(vel, spin) {
+  ball.v.copy(vel); ball.spin = clamp(spin, -1, 1); ball.gutter = 0; ball.wasGutter = false; ball.hitPins = false; ball.crossed = ball.p.z < 0;
+  standingAtThrow = pins.filter(p => p.active && p.standing).length;
+  pins.forEach(p => { p.startStanding = p.active && p.standing; });
+  phase = 'rolling'; phaseT = 0; hideToast(); $('#hint').classList.add('gone');
+}
+function scoreRoll() {
+  const fi = curFrame(); if (fi > 9) return;
+  const fresh = freshRackFor(fi);
+  const n = pins.filter(p => p.startStanding && (!p.standing || p.removed)).length;
+  const f = frames[fi]; f.push(n);
+  const strike = fresh && n === 10; strikeFlags.push(strike);
+  let reset = false;
+  if (fi < 9) reset = frameDone(fi);
+  else if (f.length === 1 && n === 10) reset = true;
+  else if (f.length === 2 && ((f[0] === 10 && f[1] === 10) || (f[0] < 10 && f[0] + f[1] === 10))) reset = true;
+  let title, sub = `${n} ${n === 1 ? 'pin' : 'pins'}`;
+  if (strike) {
+    let streak = 0; for (let i = strikeFlags.length - 1; i >= 0 && strikeFlags[i]; i--) streak++;
+    title = streak === 2 ? 'Double!' : streak === 3 ? 'Turkey!' : streak > 3 ? `${streak}-bagger!` : 'Strike!';
+    sub = 'All ten down'; chime(streak);
+  } else if (!fresh && n === standingAtThrow && n > 0) { title = 'Spare!'; sub = 'Cleaned it up'; chime(1); }
+  else if (n === 0) title = ball.wasGutter ? 'Gutter ball' : 'No pins';
+  else if (fresh && !reset && isSplit()) title = 'Split';
+  else title = sub, sub = '';
+  if (curFrame() > 9) {
+    const total = runningTotal();
+    title = strikeFlags.filter(Boolean).length === 12 ? 'Perfect game!' : 'Game over';
+    sub = `Final score ${total} · ${renderer.xr.isPresenting ? 'grab the ball for a new game' : 'tap to play again'}`;
+  }
+  message(title, sub);
+  pendingReset = reset;
+  refreshScore();
+}
+function startSweep() {
+  pins.forEach(p => { if (p.active && !p.standing) p.sinking = true; if (p.standing) { p.vx = p.vz = 0; p.wobA = 0; } });
+  ballMesh.visible = false;
+  phase = 'sweep'; phaseT = 1.3;
+}
+
+// ---------- Score display ----------
+const sbCtx = sbCanvas.getContext('2d');
+let msgTitle = 'Welcome to Starlane', msgSub = '';
+function drawBoard() {
+  const g = sbCtx, W = 1024, H = 360; const scores = frameScores(); const fi = curFrame();
+  g.fillStyle = '#120d1f'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#ffb347'; g.lineWidth = 4; g.strokeRect(6, 6, W - 12, H - 12);
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left'; g.fillStyle = '#ffb347'; g.font = '34px Bungee, Impact, sans-serif'; g.fillText('STARLANE · LANE 7', 28, 56);
+  g.textAlign = 'right'; g.fillStyle = '#6ee0ff'; g.font = '700 26px "Chivo Mono", monospace';
+  g.fillText(fi > 9 ? `TOTAL ${runningTotal()}` : `FRAME ${fi + 1} · BALL ${frames[fi].length + 1}`, W - 28, 54);
+  const x0 = 24, y0 = 78, fw = (W - 48) / 10.5, fh = 128;
+  for (let i = 0; i < 10; i++) {
+    const x = x0 + i * fw, w = i === 9 ? fw * 1.5 : fw; const marks = frameMarks(i);
+    g.fillStyle = i === fi ? 'rgba(255,179,71,.16)' : 'rgba(255,255,255,.03)'; g.fillRect(x, y0, w, fh);
+    g.strokeStyle = i === fi ? '#ffb347' : 'rgba(190,170,235,.35)'; g.lineWidth = 2; g.strokeRect(x, y0, w, fh);
+    g.fillStyle = '#a99cc4'; g.font = '500 16px "Chivo Mono", monospace'; g.textAlign = 'left'; g.fillText(String(i + 1), x + 8, y0 + 22);
+    const bs = 34, nb = marks.length;
+    marks.forEach((m, k) => {
+      const bx = x + w - (nb - k) * bs; g.strokeStyle = 'rgba(190,170,235,.35)'; g.strokeRect(bx, y0, bs, bs);
+      g.fillStyle = m === 'X' ? '#ffb347' : m === '/' ? '#6ee0ff' : '#f3ecff'; g.font = '700 24px "Chivo Mono", monospace'; g.textAlign = 'center'; g.fillText(m, bx + bs / 2, y0 + 26);
+    });
+    if (scores[i] !== null) { g.fillStyle = '#f3ecff'; g.font = '700 36px "Chivo Mono", monospace'; g.textAlign = 'center'; g.fillText(String(scores[i]), x + w / 2, y0 + fh - 22); }
+  }
+  g.textAlign = 'center'; g.fillStyle = '#6ee0ff'; g.font = '48px Bungee, Impact, sans-serif'; g.fillText(msgTitle.toUpperCase(), W / 2, 282);
+  g.fillStyle = '#d6cbef'; g.font = '600 22px Chivo, sans-serif'; g.fillText(msgSub, W / 2, 322);
+  sbTex.needsUpdate = true;
+}
+function refreshScore() {
+  const scores = frameScores(), fi = curFrame();
+  $('#card').innerHTML = frames.map((f, i) => {
+    const m = frameMarks(i).map(v => `<span class="${v === 'X' ? 'x' : v === '/' ? 's' : ''}">${v}</span>`).join('');
+    return `<div class="fr${i === fi ? ' cur' : ''}"><div class="n">${i + 1}</div><div class="m">${m}</div><div class="t">${scores[i] ?? ''}</div></div>`;
+  }).join('');
+  $('#totalNum').textContent = runningTotal();
+  drawBoard();
+}
+let toastTimer = 0;
+function message(t, s) {
+  msgTitle = t; msgSub = s || '';
+  const el = $('#toast'); el.querySelector('b').textContent = t; el.querySelector('span').textContent = s || ''; el.classList.add('on');
+  toastTimer = 2.6; drawBoard();
+}
+function hideToast() { $('#toast').classList.remove('on'); }
+function readyPrompt() {
+  if (renderer.xr.isPresenting) { msgTitle = 'Grab the ball'; msgSub = 'Squeeze grip or trigger, swing, and let go. Twist your wrist for hook.'; }
+  else { msgTitle = 'Your roll'; msgSub = 'Swipe up to bowl'; }
+  drawBoard();
+}
+
+// ---------- Audio (synthesised, starts on first interaction) ----------
+let actx = null, noiseBuf = null, rollGain = null, lastClack = 0;
+function initAudio() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 170;
+    rollGain = actx.createGain(); rollGain.gain.value = 0;
+    src.connect(lp).connect(rollGain).connect(actx.destination); src.start();
+  } catch (e) { actx = null; }
+}
+function clack(v) {
+  if (!actx || v < 0.25) return; const now = actx.currentTime; if (now - lastClack < 0.018) return; lastClack = now;
+  const vol = Math.min(1, v / 6) * 0.55;
+  const src = actx.createBufferSource(); src.buffer = noiseBuf;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rand(1500, 3800); bp.Q.value = 2.5;
+  const g = actx.createGain(); g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+  src.connect(bp).connect(g).connect(actx.destination); src.start(now, rand(0, 1.5), 0.15);
+  const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = rand(700, 1300);
+  const og = actx.createGain(); og.gain.setValueAtTime(vol * 0.6, now); og.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  o.connect(og).connect(actx.destination); o.start(now); o.stop(now + 0.07);
+}
+function thud(v) {
+  if (!actx) return; const now = actx.currentTime;
+  const o = actx.createOscillator(); o.frequency.setValueAtTime(90, now); o.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+  const g = actx.createGain(); g.gain.setValueAtTime(Math.min(0.7, v * 0.15), now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  o.connect(g).connect(actx.destination); o.start(now); o.stop(now + 0.26);
+}
+function chime(level) {
+  if (!actx) return; const now = actx.currentTime; const notes = [523.25, 659.25, 783.99, 1046.5];
+  notes.slice(0, Math.min(4, 2 + level)).forEach((f, i) => {
+    const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+    const g = actx.createGain(); const t = now + 0.35 + i * 0.09; g.gain.setValueAtTime(0.0001, now); g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    o.connect(g).connect(actx.destination); o.start(now); o.stop(t + 0.3);
+  });
+}
+
+// ---------- VR controllers ----------
+const hands = [];
+let held = null;
+const handMat = new THREE.MeshStandardMaterial({ color: 0xd8cff0, roughness: 0.5 });
+for (let i = 0; i < 2; i++) {
+  const ctrl = renderer.xr.getController(i), grip = renderer.xr.getControllerGrip(i);
+  rig.add(ctrl); rig.add(grip);
+  const glove = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), handMat); glove.scale.set(0.04, 0.028, 0.07); glove.position.z = 0.02; grip.add(glove);
+  const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 20), neonCyan); cuff.position.z = 0.085; grip.add(cuff);
+  const hand = { i, ctrl, grip, src: null, sel: false, sq: false };
+  ctrl.addEventListener('connected', e => { hand.src = e.data; });
+  ctrl.addEventListener('disconnected', () => { hand.src = null; });
+  const down = () => onGrab(hand), up = () => { if (!hand.sel && !hand.sq) onRelease(hand); };
+  ctrl.addEventListener('selectstart', () => { hand.sel = true; down(); });
+  ctrl.addEventListener('squeezestart', () => { hand.sq = true; down(); });
+  ctrl.addEventListener('selectend', () => { hand.sel = false; up(); });
+  ctrl.addEventListener('squeezeend', () => { hand.sq = false; up(); });
+  hands.push(hand);
+}
+function buzz(intensity, ms, hand) {
+  const list = hand ? [hand] : held ? [held.hand] : hands;
+  list.forEach(h => { const a = h.src && h.src.gamepad && h.src.gamepad.hapticActuators && h.src.gamepad.hapticActuators[0]; if (a && a.pulse) a.pulse(intensity, ms); });
+}
+function onGrab(hand) {
+  initAudio();
+  if (phase === 'over') { newGame(); return; }
+  if (phase !== 'ready' || held) return;
+  held = { hand, hist: [], summon: 0, from: ball.p.clone() };
+  phase = 'held'; buzz(0.3, 30, hand); hideToast();
+}
+const gp = new THREE.Vector3(), gq = new THREE.Quaternion();
+function updateHeld(dt) {
+  const h = held; h.hand.grip.getWorldPosition(gp); h.hand.grip.getWorldQuaternion(gq);
+  gp.y -= 0.035;
+  h.summon = Math.min(1, h.summon + dt / 0.18);
+  if (h.summon < 1) ball.p.lerpVectors(h.from, gp, h.summon * h.summon); else ball.p.copy(gp);
+  ballMesh.quaternion.copy(gq);
+  const t = performance.now() / 1000; h.hist.push({ p: gp.clone(), q: gq.clone(), t }); if (h.hist.length > 16) h.hist.shift();
+}
+function onRelease(hand) {
+  if (!held || held.hand !== hand) return;
+  const hist = held.hist; held = null;
+  const last = hist[hist.length - 1]; if (!last) { phase = 'ready'; placeBallReady(); return; }
+  let first = hist[0]; for (const e of hist) { if (e.t >= last.t - 0.09) { first = e; break; } }
+  if (first === last && hist.length > 1) first = hist[hist.length - 2];
+  const dt = Math.max(0.011, last.t - first.t);
+  const v = last.p.clone().sub(first.p).divideScalar(dt).multiplyScalar(1.1); if (v.length() > 12) v.setLength(12);
+  const dq = last.q.clone().multiply(first.q.clone().invert());
+  const ang = 2 * Math.acos(clamp(dq.w, -1, 1)), sn = Math.sqrt(Math.max(1e-9, 1 - dq.w * dq.w));
+  const wz = (dq.z / sn) * (ang > Math.PI ? ang - 2 * Math.PI : ang) / dt;
+  ball.p.copy(last.p);
+  launch(v, (wz / 6) * 0.8);
+}
+
+// ---------- Desktop / touch controls ----------
+let drag = null;
+const canvas = renderer.domElement;
+const xFromScreen = cx => clamp(((cx / window.innerWidth) - 0.5) / 0.3 * 0.42, -0.42, 0.42);
+canvas.addEventListener('pointerdown', e => {
+  initAudio(); if (renderer.xr.isPresenting) return;
+  if (phase === 'over') { newGame(); return; }
+  if (phase !== 'ready') return;
+  aimX = xFromScreen(e.clientX); ball.p.x = aimX;
+  drag = { pts: [{ x: e.clientX, y: e.clientY, t: performance.now() }] };
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
+});
+canvas.addEventListener('pointermove', e => {
+  if (drag) { drag.pts.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (drag.pts.length > 90) drag.pts.shift(); }
+  else if (phase === 'ready' && e.pointerType === 'mouse' && !renderer.xr.isPresenting) { aimX = xFromScreen(e.clientX); }
+});
+const endDrag = e => {
+  if (!drag) return; const pts = drag.pts; drag = null;
+  pts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+  const a = pts[0], z = pts[pts.length - 1], cx = z.x - a.x, cy = z.y - a.y;
+  if (-cy < 40 || phase !== 'ready') return;
+  let k = pts.length - 1; while (k > 0 && pts[k].t > z.t - 110) k--;
+  const segDy = z.y - pts[k].y, segDt = Math.max(16, z.t - pts[k].t);
+  const v = Math.max(0, -segDy / (segDt / 1000) / window.innerHeight);
+  const speed = clamp(1.6 + v * 3.1, 2.5, 11);
+  const ang = Math.atan2(cx, -cy);
+  const mid = pts[Math.floor(pts.length / 2)], len2 = cx * cx + cy * cy;
+  const dev = ((mid.x - a.x) * (-cy) + (mid.y - a.y) * cx) / len2;
+  ball.p.set(aimX, BALL_R, 0.55);
+  launch(new THREE.Vector3(Math.sin(ang * 0.16) * speed, 0, -Math.cos(ang * 0.16) * speed), dev * 5);
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', () => { drag = null; });
+window.addEventListener('keydown', e => {
+  if (renderer.xr.isPresenting) return;
+  if (e.key === 'ArrowLeft' && phase === 'ready') { aimX = clamp(aimX - 0.04, -0.42, 0.42); e.preventDefault(); }
+  if (e.key === 'ArrowRight' && phase === 'ready') { aimX = clamp(aimX + 0.04, -0.42, 0.42); e.preventDefault(); }
+  if (e.key === ' ' && e.target === document.body) {
+    e.preventDefault(); initAudio();
+    if (phase === 'over') newGame(); else if (phase === 'ready') { ball.p.set(aimX, BALL_R, 0.55); launch(new THREE.Vector3(0, 0, -7.5), 0); }
+  }
+});
+$('#newBtn').addEventListener('click', () => { initAudio(); if (!held) newGame(); });
+
+// ---------- WebXR session ----------
+let xrSession = null;
+async function setupVR() {
+  const btn = $('#vrBtn'), note = $('#vrNote');
+  if (!window.isSecureContext) {
+    btn.textContent = 'VR needs HTTPS'; btn.disabled = true;
+    note.textContent = 'This page was opened from a file, so the browser blocks VR. Open it from an https:// web address instead.';
+    return;
+  }
+  let ok = false;
+  if ('xr' in navigator) { try { ok = await navigator.xr.isSessionSupported('immersive-vr'); } catch (e) { ok = false; } }
+  if (!ok) {
+    btn.textContent = 'VR not available'; btn.disabled = true;
+    note.textContent = 'Playing in flat mode. For VR, open this page in a headset browser such as Meta Quest Browser.';
+    return;
+  }
+  btn.disabled = false; btn.textContent = 'Enter VR';
+  btn.addEventListener('click', () => {
+    initAudio();
+    if (xrSession) { xrSession.end(); return; }
+    // requestSession must be called straight from the click, before any await
+    const tries = [{ optionalFeatures: ['local-floor'] }, undefined];
+    let req; try { req = navigator.xr.requestSession('immersive-vr', tries[0]); } catch (e) { req = Promise.reject(e); }
+    req.catch(e1 => { console.warn('VR session with local-floor failed', e1); return navigator.xr.requestSession('immersive-vr'); })
+      .then(async s => {
+        xrSession = s; s.addEventListener('end', onXREnd);
+        let lastErr = null;
+        for (const space of ['local-floor', 'local']) {
+          try { renderer.xr.setReferenceSpaceType(space); await renderer.xr.setSession(s); lastErr = null; break; }
+          catch (e) { lastErr = e; console.warn('Reference space ' + space + ' failed', e); }
+        }
+        if (lastErr) { s.end().catch(() => {}); throw lastErr; }
+        rig.position.set(0, 0, RIG_Z); btn.textContent = 'Exit VR'; note.textContent = '';
+        if (phase === 'ready') placeBallReady();
+        readyPrompt();
+      })
+      .catch(e => {
+        xrSession = null;
+        const why = e && (e.name || e.message) ? `${e.name || 'Error'}: ${e.message || ''}` : String(e);
+        note.textContent = (e && e.name === 'SecurityError')
+          ? 'The browser blocked VR for this page (' + why + '). Open it from an https:// web address.'
+          : 'The headset refused VR: ' + why;
+      });
+  });
+}
+function onXREnd() {
+  xrSession = null; held = null; rig.position.set(0, 0, 0);
+  $('#vrBtn').textContent = 'Enter VR';
+  if (phase === 'held') phase = 'ready';
+  if (phase === 'ready') placeBallReady();
+  onResize(); readyPrompt();
+}
+setupVR();
+
+// ---------- Main loop ----------
+const camTarget = new THREE.Vector3(), camLook = new THREE.Vector3(0, 0.2, -18.6);
+let camMinZ = 2.7;
+function update(dt) {
+  if (held) updateHeld(dt);
+  const n = Math.ceil(dt / 0.004), h = dt / n;
+  for (let s = 0; s < n; s++) {
+    if (ballLive()) stepBall(h);
+    for (const p of pins) stepPin(p, h);
+    collide();
+  }
+  phaseT += dt;
+  if (phase === 'rolling') {
+    const b = ball, sp = Math.hypot(b.v.x, b.v.z);
+    if (!b.crossed && b.p.z < 0) b.crossed = true;
+    if (b.crossed) {
+      if (b.p.z < DECK_END - 0.25 || (sp < 0.06 && b.ground) || phaseT > 14) { phase = 'settling'; phaseT = 0; }
+    } else if ((sp < 0.05 && b.ground && phaseT > 0.6) || b.p.z > 4 || phaseT > 6) {
+      message('Missed the lane', 'The ball never crossed the foul line. Roll again.');
+      phase = 'ready'; placeBallReady();
+    }
+  } else if (phase === 'settling') {
+    if ((phaseT > 1.4 && pinsSettled()) || phaseT > 5) { scoreRoll(); startSweep(); }
+  } else if (phase === 'sweep') {
+    phaseT -= 2 * dt; // count down
+    if (pendingReset && phaseT < 0.5) { pins.forEach(p => resetPin(p, 0.45)); pendingReset = false; }
+    if (phaseT <= 0) {
+      phase = curFrame() > 9 ? 'over' : 'ready';
+      placeBallReady();
+      if (phase === 'ready' && toastTimer <= 0) readyPrompt();
+    }
+  }
+  if (phase === 'ready' && !renderer.xr.isPresenting) { ball.p.x += (aimX - ball.p.x) * Math.min(1, dt * 14); ball.p.y = BALL_R; ball.p.z = 0.55; }
+  ballMesh.position.copy(ball.p);
+  pins.forEach(renderPin);
+  if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) { hideToast(); if (phase === 'ready') readyPrompt(); } }
+  if (rollGain && actx) {
+    const sp = ballLive() && ball.ground && ball.p.y > -0.1 ? Math.hypot(ball.v.x, ball.v.z) : 0;
+    rollGain.gain.setTargetAtTime(Math.min(0.5, sp * 0.06), actx.currentTime, 0.05);
+  }
+  if (!renderer.xr.isPresenting) {
+    if (ballLive()) camMinZ = Math.min(camMinZ, clamp(ball.p.z + 4.2, -13.5, 2.7));
+    else if (phase === 'ready' || phase === 'over') camMinZ = 2.7;
+    camTarget.set(0, 1.45 - (2.7 - camMinZ) * 0.025, camMinZ);
+    camera.position.lerp(camTarget, 1 - Math.exp(-3 * dt));
+    camera.lookAt(camLook);
+  }
+}
+let last = performance.now();
+function start(data) {
+  frames = Array.from({ length: 10 }, () => []); strikeFlags = [];
+  pins.forEach(p => resetPin(p, 0));
+  if (data && Array.isArray(data.frames) && data.frames.length === 10) {
+    frames = data.frames.map(f => f.slice()); strikeFlags = data.strikeFlags || [];
+    if (Array.isArray(data.standing)) pins.forEach((p, i) => { if (!data.standing[i]) { p.active = false; p.standing = false; p.mesh.visible = false; } });
+  }
+  phase = curFrame() > 9 ? 'over' : 'ready';
+  placeBallReady(); refreshScore(); readyPrompt();
+  renderer.setAnimationLoop(() => { const now = performance.now(); const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); renderer.render(scene, camera); });
+}
+function onResize() {
+  if (renderer.xr.isPresenting) return;
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.fov = camera.aspect < 0.8 ? 64 : 52;
+  camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize); onResize();
+if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('48px Bungee'), document.fonts.load('700 24px "Chivo Mono"'), document.fonts.load('600 22px Chivo')]).then(() => { drawMask(); drawBoard(); }).catch(() => { });
+
+const hot = window.claude && window.claude.hot;
+if (hot && hot.snapshot) { try { hot.snapshot(() => ({ frames, strikeFlags, standing: pins.map(p => p.active && p.standing) })); } catch (e) { } }
+if (hot && hot.ready) hot.ready(start); else start(hot && hot.data ? hot.data : {});
+})();
+</script>
+
+</body>
+</html>
